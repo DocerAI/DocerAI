@@ -2,7 +2,7 @@ import os
 import requests
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # Настройки из переменных окружения
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -13,14 +13,17 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+def start_command(update: Update, context: CallbackContext):
+    """Обработчик команды /start"""
+    update.message.reply_text(
         "Привет! Я твой бот 🤖\n"
         "Просто напиши мне что-нибудь, и я отвечу!"
     )
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def help_command(update: Update, context: CallbackContext):
+    """Обработчик команды /help"""
     help_text = """
 📝 **Доступные команды:**
 /start - Начать работу
@@ -28,7 +31,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 💬 Просто напиши сообщение - я отвечу!
     """
-    await update.message.reply_text(help_text)
+    update.message.reply_text(help_text)
 
 def query_api(user_message: str) -> str:
     """Функция для запроса к API"""
@@ -56,26 +59,43 @@ def query_api(user_message: str) -> str:
     except Exception as e:
         return f"🤖 Бот работает! (Ошибка API: {str(e)})"
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_message(update: Update, context: CallbackContext):
+    """Обработчик текстовых сообщений"""
     user_message = update.message.text
-    await update.message.chat.send_action(action="typing")
     
+    # Показываем что бот печатает
+    context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    
+    # Получаем ответ от API
     api_response = query_api(user_message)
-    await update.message.reply_text(api_response)
+    
+    # Отправляем ответ пользователю
+    update.message.reply_text(api_response)
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.error(f"Ошибка: {context.error}")
+def error_handler(update: Update, context: CallbackContext):
+    """Обработчик ошибок"""
+    logger.error(f"Ошибка при обработке сообщения: {context.error}")
 
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    """Основная функция"""
+    # Создаем updater
+    updater = Updater(token=BOT_TOKEN, use_context=True)
     
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_error_handler(error_handler)
+    # Получаем dispatcher
+    dp = updater.dispatcher
     
+    # Добавляем обработчики
+    dp.add_handler(CommandHandler("start", start_command))
+    dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    
+    # Добавляем обработчик ошибок
+    dp.add_error_handler(error_handler)
+    
+    # Запускаем бота
     print("🤖 Бот запущен на Render!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
